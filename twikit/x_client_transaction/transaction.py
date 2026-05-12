@@ -44,8 +44,8 @@ class ClientTransaction:
             home_page_response) or self.home_page_response
         on_demand_file = ON_DEMAND_FILE_REGEX.search(str(response))
         if on_demand_file:
-            on_demand_file_url = f"https://abs.twimg.com/responsive-web/client-web/ondemand.s.{on_demand_file.group(1)}a.js"
             print(on_demand_file_url)
+            on_demand_file_url = f"https://abs.twimg.com/responsive-web/client-web/ondemand.s.{on_demand_file.group(1)}a.js"            
             on_demand_file_response = await session.request(method="GET", url=on_demand_file_url, headers=headers)
             key_byte_indices_match = INDICES_REGEX.finditer(
                 str(on_demand_file_response.text))
