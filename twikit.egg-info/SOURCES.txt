@@ -1,0 +1,8 @@
+LICENSE
+README.md
+setup.py
+twikit.egg-info/PKG-INFO
+twikit.egg-info/SOURCES.txt
+twikit.egg-info/dependency_links.txt
+twikit.egg-info/requires.txt
+twikit.egg-info/top_level.txt

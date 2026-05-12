@@ -275,6 +275,7 @@ class Client:
 
     async def _get_guest_token(self) -> str:
         response, _ = await self.v11.guest_activate()
+        print(response)
         guest_token = response['guest_token']
         return guest_token
 
