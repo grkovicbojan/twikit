@@ -35,7 +35,7 @@ USERNAME = '@grkovicbojan90'
 EMAIL = 'grkovicbojan90@gmail.com'
 PASSWORD = 'Pajko19915!@#!@#'
 
-client = Client('en-US')
+client = Client('en-US', proxy='socks5://14ab94d7187c2:076d4ae3fa@206.53.57.231:12324')
 
 async def main():
     # Asynchronous client methods are coroutines and
