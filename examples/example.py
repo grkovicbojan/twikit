@@ -71,8 +71,13 @@ COOKIES_FILE = os.environ.get('TWIKIT_COOKIES', 'cookies.json')
 
 # Cookies in the Cookie-Editor export that twikit doesn't need (or that go
 # stale fast and would only make requests look weirder).
+#
+# NOTE: ``__cf_bm`` is *kept* deliberately. It's Cloudflare's bot-management
+# token, minted for your browser when it solved a CF challenge. Forwarding
+# it from the same session makes CF treat our requests as part of that
+# already-trusted session. It expires after ~30 minutes, so when CF starts
+# returning 403 again, re-export cookies from the browser.
 _DROP_COOKIES = {
-    '__cf_bm',
     'gt',
     'night_mode',
     'dnt',
@@ -121,7 +126,15 @@ def _read_cookies(path: str) -> dict[str, str]:
     return cookies
 
 
-client = Client('en-US', proxy='socks5://14ab94d7187c2:076d4ae3fa@206.53.57.231:12324')
+# HTTP/2 is what every modern browser negotiates with x.com. Forcing httpx
+# to do the same makes the ALPN handshake match the Safari User-Agent we
+# advertise -- Cloudflare's bot rules flag the mismatch otherwise.
+# Requires the optional ``h2`` package: ``pip install h2``.
+client = Client(
+    'en-US',
+    proxy='socks5://14ab94d7187c2:076d4ae3fa@206.53.57.231:12324',
+    http2=True,
+)
 
 
 async def main():

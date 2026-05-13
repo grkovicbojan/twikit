@@ -257,12 +257,23 @@ class Client:
         """
         Base headers for Twitter API requests.
         """
+        # Cloudflare's bot rules on /i/api/graphql/* require the browser-
+        # standard ``Sec-Fetch-*`` set; without them a logged-in cookie
+        # session still hits a 403 challenge page. ``Accept`` and
+        # ``Accept-Encoding`` are added for the same reason -- httpx's
+        # defaults differ from any real browser.
         headers = {
             'authorization': f'Bearer {self._token}',
             'content-type': 'application/json',
+            'Accept': '*/*',
+            'Accept-Encoding': 'gzip, deflate, br',
             'X-Twitter-Auth-Type': 'OAuth2Session',
             'X-Twitter-Active-User': 'yes',
+            'Origin': f'https://{DOMAIN}',
             'Referer': f'https://{DOMAIN}/',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Site': 'same-origin',
             'User-Agent': self._user_agent,
         }
 
