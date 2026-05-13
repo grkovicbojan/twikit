@@ -30,6 +30,39 @@ _tx_mod.ClientTransaction.get_indices = _patched_get_indices
 # END MONKEY PATCH
 
 from twikit import Client
+from twikit.client.gql import Endpoint as _GQLEndpoint
+
+# MONKEY PATCH: refresh stale GraphQL query IDs
+#
+# X.com rotates the hash in each GraphQL endpoint path (e.g. the leading
+# `flaR-PUMshxFWZWPNpq4zA` in `/i/api/graphql/<hash>/SearchTimeline`) every
+# few weeks. When twikit's hard-coded hash goes stale, the GraphQL router
+# returns a 404 with an empty body -- exactly what you see on `search_tweet`.
+#
+# Easiest way to refresh an ID:
+#   1. Open https://x.com/search?q=hello&f=live in a logged-in browser.
+#   2. Open DevTools -> Network tab, type "SearchTimeline" in the filter.
+#   3. Copy the 22-character hash that appears right before /SearchTimeline
+#      in the request URL and paste it below.
+#
+# Same trick works for any operation in `twikit.client.gql.Endpoint`.
+_GQL_QUERY_ID_OVERRIDES = {
+    'SearchTimeline': 'nK1dw4oV3k4w5TdtcAdSww',
+}
+
+def _patch_gql_endpoint(operation: str, query_id: str) -> None:
+    # twikit names Endpoint constants in SCREAMING_SNAKE_CASE, e.g.
+    # "SearchTimeline" lives on Endpoint.SEARCH_TIMELINE.
+    snake = re.sub(r'(?<!^)(?=[A-Z])', '_', operation).upper()
+    current = getattr(_GQLEndpoint, snake, None)
+    if not isinstance(current, str) or f'/{operation}' not in current:
+        return
+    base, _, _ = current.rpartition('/graphql/')
+    setattr(_GQLEndpoint, snake, f'{base}/graphql/{query_id}/{operation}')
+
+for _op, _qid in _GQL_QUERY_ID_OVERRIDES.items():
+    _patch_gql_endpoint(_op, _qid)
+# END MONKEY PATCH
 
 ###########################################
 
@@ -136,7 +169,20 @@ async def main():
     ###########################################
 
     # Search Latest Tweets
-    tweets = await client.search_tweet('query', 'Latest')
+    try:
+        tweets = await client.search_tweet('query', 'Latest')
+    except Exception as exc:
+        # A 404 with an empty body almost always means a GraphQL query ID
+        # has rotated -- check `_GQL_QUERY_ID_OVERRIDES` at the top of this
+        # file and refresh the hash from your browser's DevTools.
+        print(
+            f"[example] search_tweet failed: {type(exc).__name__}: {exc}\n"
+            f"[example] If you see status:404 with an empty message above, "
+            f"the SearchTimeline query id has likely rotated again. "
+            f"Refresh _GQL_QUERY_ID_OVERRIDES at the top of this file.",
+            file=sys.stderr,
+        )
+        raise
     for tweet in tweets:
         print(tweet)
     # Search more tweets
