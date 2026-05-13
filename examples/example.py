@@ -1,4 +1,6 @@
 import asyncio
+import os
+import sys
 
 # MONKEY PATCH: Remove this block when twikit is updated to fix ON_DEMAND_FILE_REGEX
 import re
@@ -30,21 +32,45 @@ from twikit import Client
 
 ###########################################
 
-# Enter your account information
+# Account credentials are only used if no cookies file is found.
+# With Cloudflare's TLS fingerprinting on /1.1/onboarding/task.json,
+# password login from a datacenter IP is almost always blocked.
+# The reliable path is: log in once in a real browser, export the
+# `auth_token` and `ct0` cookies, and let twikit reuse them.
+#
+#   python examples/save_cookies.py auth_token=<value> ct0=<value>
+#
+# After that, this script will skip login entirely.
 USERNAME = '@grkovicbojan90'
 EMAIL = 'grkovicbojan90@gmail.com'
 PASSWORD = 'Pajko19915!@#!@#'
+COOKIES_FILE = os.environ.get('TWIKIT_COOKIES', 'cookies.json')
 
 client = Client('en-US', proxy='socks5://14ab94d7187c2:076d4ae3fa@206.53.57.231:12324')
 
 async def main():
-    # Asynchronous client methods are coroutines and
-    # must be called using `await`.
+    if not os.path.exists(COOKIES_FILE):
+        print(
+            f"[example] No cookies file at '{COOKIES_FILE}'.\n"
+            f"[example] Cloudflare currently blocks password login from this IP, "
+            f"so you need to seed cookies once from a real browser:\n"
+            f"  1. Log in to https://x.com in any browser (a residential one is best).\n"
+            f"  2. Open DevTools -> Application/Storage -> Cookies -> https://x.com\n"
+            f"  3. Copy the values of `auth_token` and `ct0`.\n"
+            f"  4. Run:  python examples/save_cookies.py "
+            f"auth_token=<value> ct0=<value> -o {COOKIES_FILE}\n"
+            f"  5. Re-run this example.\n",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # When `cookies_file` exists, twikit's login() loads it and returns
+    # immediately, skipping the onboarding flow that Cloudflare blocks.
     await client.login(
         auth_info_1=USERNAME,
         auth_info_2=EMAIL,
         password=PASSWORD,
-        cookies_file="cookies.json"
+        cookies_file=COOKIES_FILE,
     )
 
     ###########################################
