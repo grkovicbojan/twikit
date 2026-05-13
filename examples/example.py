@@ -30,39 +30,31 @@ _tx_mod.ClientTransaction.get_indices = _patched_get_indices
 # END MONKEY PATCH
 
 from twikit import Client
-from twikit.client.gql import Endpoint as _GQLEndpoint
+from twikit.client import client as _client_mod
+from twikit.gql_refresh import refresh_query_ids
 
-# MONKEY PATCH: refresh stale GraphQL query IDs
-#
-# X.com rotates the hash in each GraphQL endpoint path (e.g. the leading
-# `flaR-PUMshxFWZWPNpq4zA` in `/i/api/graphql/<hash>/SearchTimeline`) every
-# few weeks. When twikit's hard-coded hash goes stale, the GraphQL router
-# returns a 404 with an empty body -- exactly what you see on `search_tweet`.
-#
-# Easiest way to refresh an ID:
-#   1. Open https://x.com/search?q=hello&f=live in a logged-in browser.
-#   2. Open DevTools -> Network tab, type "SearchTimeline" in the filter.
-#   3. Copy the 22-character hash that appears right before /SearchTimeline
-#      in the request URL and paste it below.
-#
-# Same trick works for any operation in `twikit.client.gql.Endpoint`.
-_GQL_QUERY_ID_OVERRIDES = {
-    'SearchTimeline': 'nK1dw4oV3k4w5TdtcAdSww',
-}
 
-def _patch_gql_endpoint(operation: str, query_id: str) -> None:
-    # twikit names Endpoint constants in SCREAMING_SNAKE_CASE, e.g.
-    # "SearchTimeline" lives on Endpoint.SEARCH_TIMELINE.
-    snake = re.sub(r'(?<!^)(?=[A-Z])', '_', operation).upper()
-    current = getattr(_GQLEndpoint, snake, None)
-    if not isinstance(current, str) or f'/{operation}' not in current:
-        return
-    base, _, _ = current.rpartition('/graphql/')
-    setattr(_GQLEndpoint, snake, f'{base}/graphql/{query_id}/{operation}')
+# DIAGNOSTIC: print the URL + response details on any HTTP error so a future
+# rotation or shadow-block shows up as one obvious line of output instead of
+# an empty "404".
+_orig_request = _client_mod.Client.request
 
-for _op, _qid in _GQL_QUERY_ID_OVERRIDES.items():
-    _patch_gql_endpoint(_op, _qid)
-# END MONKEY PATCH
+async def _logging_request(self, method, url, *args, **kwargs):
+    try:
+        return await _orig_request(self, method, url, *args, **kwargs)
+    except Exception as exc:
+        headers = getattr(exc, 'headers', None)
+        cf_ray = headers.get('cf-ray') if headers else None
+        server = headers.get('server') if headers else None
+        print(
+            f"[debug] {method} {url[:200]} -> {type(exc).__name__}\n"
+            f"[debug]   server: {server}    cf-ray: {cf_ray}",
+            file=sys.stderr,
+        )
+        raise
+
+_client_mod.Client.request = _logging_request
+# END DIAGNOSTIC
 
 ###########################################
 
@@ -166,20 +158,46 @@ async def main():
     client.set_cookies(cookies, clear_cookies=True)
     print(f"[example] loaded {len(cookies)} cookie(s) from '{COOKIES_FILE}'.")
 
+    # Pull live GraphQL query IDs from x.com's JS bundle and patch
+    # twikit.client.gql.Endpoint. Cached on disk so subsequent runs are free
+    # until x.com ships a new bundle.
+    patched = await refresh_query_ids(client.http)
+    print(f"[example] refreshed {patched} GraphQL endpoint(s) "
+          f"against live x.com bundle.")
+
+    ###########################################
+
+    # Smoke test: prove the cookies are valid. If this fails, the search
+    # failure isn't about query ids -- it's the account/cookies/IP.
+    try:
+        twid = cookies.get('twid', '')
+        my_id = twid.split('%3D', 1)[-1] or twid.split('=', 1)[-1]
+        print(f"[smoke] resolving my own user (id={my_id!r}) ...")
+        me = await client.get_user_by_id(my_id)
+        print(f"[smoke] OK -- @{me.screen_name} ({me.name}), "
+              f"{me.followers_count} followers")
+    except Exception as exc:
+        print(
+            f"[smoke] failed: {type(exc).__name__}: {exc}\n"
+            f"[smoke] cookies don't grant access to even your own profile -- "
+            f"either they expired or the account is locked. Re-export from "
+            f"the browser.",
+            file=sys.stderr,
+        )
+        raise
+
     ###########################################
 
     # Search Latest Tweets
     try:
         tweets = await client.search_tweet('query', 'Latest')
     except Exception as exc:
-        # A 404 with an empty body almost always means a GraphQL query ID
-        # has rotated -- check `_GQL_QUERY_ID_OVERRIDES` at the top of this
-        # file and refresh the hash from your browser's DevTools.
         print(
             f"[example] search_tweet failed: {type(exc).__name__}: {exc}\n"
-            f"[example] If you see status:404 with an empty message above, "
-            f"the SearchTimeline query id has likely rotated again. "
-            f"Refresh _GQL_QUERY_ID_OVERRIDES at the top of this file.",
+            f"[example] If status:404 with an empty body above AND the smoke "
+            f"test above succeeded, X is likely shadow-blocking search for "
+            f"this account / IP (see d60/twikit#400). Try a different proxy "
+            f"or a different account.",
             file=sys.stderr,
         )
         raise
