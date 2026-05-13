@@ -205,8 +205,9 @@ async def main():
     ###########################################
 
     # Search Latest Tweets
+    SEARCH_QUERY = 'python'
     try:
-        tweets = await client.search_tweet('query', 'Latest')
+        tweets = await client.search_tweet(SEARCH_QUERY, 'Latest')
     except Exception as exc:
         print(
             f"[example] search_tweet failed: {type(exc).__name__}: {exc}\n"
@@ -217,10 +218,29 @@ async def main():
             file=sys.stderr,
         )
         raise
+
+    def render_tweet(tweet) -> str:
+        # ``full_text`` returns the long-form body when the tweet is a "note
+        # tweet" (>280 chars) and falls back to the regular ``text`` otherwise.
+        body = (tweet.full_text or tweet.text or '').replace('\n', ' / ')
+        author = tweet.user.screen_name if tweet.user else '?'
+        return (
+            f'@{author:<15}  '
+            f'reply={tweet.reply_count:>4}  '
+            f'rt={tweet.retweet_count:>4}  '
+            f'like={tweet.favorite_count:>4}\n'
+            f'  {body}\n'
+            f'  https://x.com/{author}/status/{tweet.id}\n'
+        )
+
+    print(f"\n=== first page for query={SEARCH_QUERY!r} ({len(tweets)} tweets) ===")
     for tweet in tweets:
-        print(tweet)
-    # Search more tweets
+        print(render_tweet(tweet))
+
     more_tweets = await tweets.next()
+    print(f"\n=== next page ({len(more_tweets)} tweets) ===")
+    for tweet in more_tweets:
+        print(render_tweet(tweet))
 
     ###########################################
 

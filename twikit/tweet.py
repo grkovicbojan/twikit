@@ -118,15 +118,15 @@ class Tweet:
 
     @property
     def created_at(self) -> str:
-        return self._legacy['created_at']
+        return self._legacy.get('created_at') or ''
 
     @property
     def text(self) -> str:
-        return self._legacy['full_text']
+        return self._legacy.get('full_text') or ''
 
     @property
     def lang(self) -> str:
-        return self._legacy['lang']
+        return self._legacy.get('lang') or ''
 
     @property
     def in_reply_to(self) -> str | None:
@@ -134,7 +134,7 @@ class Tweet:
 
     @property
     def is_quote_status(self) -> bool:
-        return self._legacy['is_quote_status']
+        return self._legacy.get('is_quote_status', False)
 
     @property
     def possibly_sensitive(self) -> bool:
@@ -146,23 +146,23 @@ class Tweet:
 
     @property
     def quote_count(self) -> int:
-        return self._legacy.get('quote_count')
+        return self._legacy.get('quote_count') or 0
 
     @property
     def reply_count(self) -> int:
-        return self._legacy['reply_count']
+        return self._legacy.get('reply_count') or 0
 
     @property
     def favorite_count(self) -> int:
-        return self._legacy['favorite_count']
+        return self._legacy.get('favorite_count') or 0
 
     @property
     def favorited(self) -> bool:
-        return self._legacy['favorited']
+        return self._legacy.get('favorited', False)
 
     @property
     def retweet_count(self) -> int:
-        return self._legacy['retweet_count']
+        return self._legacy.get('retweet_count') or 0
 
     @property
     def _place_data(self):
