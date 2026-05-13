@@ -78,14 +78,19 @@ class V11Client:
         if subtask_inputs is not None:
             data['subtask_inputs'] = subtask_inputs
 
-        headers = {
+        # Start from the full browser-like base headers so Cloudflare
+        # doesn't see a bare httpx User-Agent and block the request.
+        headers = self.base._base_headers | {
             'x-guest-token': guest_token,
-            'Authorization': 'Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA'
         }
 
-        if self.base._get_csrf_token():
-            headers["x-csrf-token"] = self.base._get_csrf_token()
-            headers["x-twitter-auth-type"] = "OAuth2Session"
+        csrf_token = self.base._get_csrf_token()
+        if csrf_token:
+            headers['x-csrf-token'] = csrf_token
+            headers['x-twitter-auth-type'] = 'OAuth2Session'
+        else:
+            headers.pop('X-Twitter-Auth-Type', None)
+            headers.pop('X-Csrf-Token', None)
 
         return await self.base.post(
             Endpoint.ONBOARDING_TASK,
