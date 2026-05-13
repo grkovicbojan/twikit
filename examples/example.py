@@ -32,15 +32,16 @@ from twikit import Client
 
 ###########################################
 
-# Account credentials are only used if no cookies file is found.
-# With Cloudflare's TLS fingerprinting on /1.1/onboarding/task.json,
-# password login from a datacenter IP is almost always blocked.
-# The reliable path is: log in once in a real browser, export the
-# `auth_token` and `ct0` cookies, and let twikit reuse them.
+# Cloudflare currently fingerprints httpx's TLS on /1.1/onboarding/task.json
+# and blocks password login from most IPs (especially datacenter proxies).
+# The reliable path is: log in once in a real browser, export your cookies
+# (e.g. with the "Cookie-Editor" extension), then convert them once with:
 #
-#   python examples/save_cookies.py auth_token=<value> ct0=<value>
+#   python examples/save_cookies.py -i x-cookies.json -o cookies.json
 #
-# After that, this script will skip login entirely.
+# After that, this script just loads cookies.json and skips login entirely.
+# USERNAME / EMAIL / PASSWORD are only kept around for the (rare) case where
+# the cookie file is invalidated and you want to fall back to password login.
 USERNAME = '@grkovicbojan90'
 EMAIL = 'grkovicbojan90@gmail.com'
 PASSWORD = 'Pajko19915!@#!@#'
@@ -52,14 +53,18 @@ async def main():
     if not os.path.exists(COOKIES_FILE):
         print(
             f"[example] No cookies file at '{COOKIES_FILE}'.\n"
-            f"[example] Cloudflare currently blocks password login from this IP, "
-            f"so you need to seed cookies once from a real browser:\n"
-            f"  1. Log in to https://x.com in any browser (a residential one is best).\n"
-            f"  2. Open DevTools -> Application/Storage -> Cookies -> https://x.com\n"
-            f"  3. Copy the values of `auth_token` and `ct0`.\n"
-            f"  4. Run:  python examples/save_cookies.py "
-            f"auth_token=<value> ct0=<value> -o {COOKIES_FILE}\n"
-            f"  5. Re-run this example.\n",
+            f"[example] Cloudflare blocks password login from this IP, so "
+            f"seed the session from a real browser first:\n"
+            f"  1. Log in to https://x.com in your browser.\n"
+            f"  2. Use the 'Cookie-Editor' (or similar) extension and click "
+            f"'Export' -> 'Export as JSON'. Save the result to a file, e.g. "
+            f"x-cookies.json.\n"
+            f"  3. Convert it for twikit:\n"
+            f"       python examples/save_cookies.py -i x-cookies.json "
+            f"-o {COOKIES_FILE}\n"
+            f"     (or pipe it: cat x-cookies.json | "
+            f"python examples/save_cookies.py -o {COOKIES_FILE})\n"
+            f"  4. Re-run this example.\n",
             file=sys.stderr,
         )
         sys.exit(1)
