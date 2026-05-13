@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import sys
 
@@ -34,20 +35,69 @@ from twikit import Client
 
 # Cloudflare currently fingerprints httpx's TLS on /1.1/onboarding/task.json
 # and blocks password login from most IPs (especially datacenter proxies).
-# The reliable path is: log in once in a real browser, export your cookies
-# (e.g. with the "Cookie-Editor" extension), then convert them once with:
-#
-#   python examples/save_cookies.py -i x-cookies.json -o cookies.json
-#
-# After that, this script just loads cookies.json and skips login entirely.
-# USERNAME / EMAIL / PASSWORD are only kept around for the (rare) case where
-# the cookie file is invalidated and you want to fall back to password login.
-USERNAME = '@grkovicbojan90'
-EMAIL = 'grkovicbojan90@gmail.com'
-PASSWORD = 'Pajko19915!@#!@#'
+# Workflow:
+#   1. Log in to https://x.com in a real browser.
+#   2. Use the "Cookie-Editor" (or EditThisCookie) extension.
+#      Click "Export" -> "Export as JSON" and save the result as cookies.json
+#      in this folder. The file is the standard extension export, i.e. a JSON
+#      array of objects with `name`, `value`, `domain`, ... fields.
+#   3. Run this script.
 COOKIES_FILE = os.environ.get('TWIKIT_COOKIES', 'cookies.json')
 
+# Cookies in the Cookie-Editor export that twikit doesn't need (or that go
+# stale fast and would only make requests look weirder).
+_DROP_COOKIES = {
+    '__cf_bm',
+    'gt',
+    'night_mode',
+    'dnt',
+    '__gads',
+    '__gpi',
+    '__eoi',
+    '_ga',
+    '_gid',
+    '_gat',
+    'mbox',
+}
+
+
+def _read_cookies(path: str) -> dict[str, str]:
+    """Parse cookies.json from either the Cookie-Editor JSON array or
+    twikit's own ``{"name": "value"}`` shape."""
+    with open(path, 'r', encoding='utf-8') as fp:
+        data = json.load(fp)
+
+    if isinstance(data, dict):
+        return {str(k): str(v) for k, v in data.items()}
+
+    if not isinstance(data, list):
+        raise ValueError(
+            f"{path!r} is neither a JSON array (extension export) nor an "
+            f"object (twikit format)."
+        )
+
+    cookies: dict[str, str] = {}
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get('name')
+        value = entry.get('value')
+        if not isinstance(name, str) or not isinstance(value, str):
+            continue
+        # Cookie-Editor grabs every cookie on the current tab, including
+        # third-party ad cookies on unrelated domains. Only keep x.com /
+        # twitter.com cookies.
+        domain = (entry.get('domain') or '').lstrip('.').lower()
+        if domain and domain not in {'x.com', 'twitter.com'}:
+            continue
+        if name in _DROP_COOKIES:
+            continue
+        cookies[name] = value
+    return cookies
+
+
 client = Client('en-US', proxy='socks5://14ab94d7187c2:076d4ae3fa@206.53.57.231:12324')
+
 
 async def main():
     if not os.path.exists(COOKIES_FILE):
@@ -56,27 +106,32 @@ async def main():
             f"[example] Cloudflare blocks password login from this IP, so "
             f"seed the session from a real browser first:\n"
             f"  1. Log in to https://x.com in your browser.\n"
-            f"  2. Use the 'Cookie-Editor' (or similar) extension and click "
-            f"'Export' -> 'Export as JSON'. Save the result to a file, e.g. "
-            f"x-cookies.json.\n"
-            f"  3. Convert it for twikit:\n"
-            f"       python examples/save_cookies.py -i x-cookies.json "
-            f"-o {COOKIES_FILE}\n"
-            f"     (or pipe it: cat x-cookies.json | "
-            f"python examples/save_cookies.py -o {COOKIES_FILE})\n"
+            f"  2. Open the 'Cookie-Editor' extension and click "
+            f"'Export' -> 'Export as JSON'.\n"
+            f"  3. Save the JSON to '{COOKIES_FILE}' (in this directory).\n"
             f"  4. Re-run this example.\n",
             file=sys.stderr,
         )
         sys.exit(1)
 
-    # When `cookies_file` exists, twikit's login() loads it and returns
-    # immediately, skipping the onboarding flow that Cloudflare blocks.
-    await client.login(
-        auth_info_1=USERNAME,
-        auth_info_2=EMAIL,
-        password=PASSWORD,
-        cookies_file=COOKIES_FILE,
-    )
+    cookies = _read_cookies(COOKIES_FILE)
+
+    missing = [name for name in ('auth_token', 'ct0') if name not in cookies]
+    if missing:
+        print(
+            f"[example] '{COOKIES_FILE}' is missing required cookie(s): "
+            f"{', '.join(missing)}.\n"
+            f"[example] Make sure you exported the cookies *while logged in* "
+            f"to https://x.com.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # We skip twikit's normal login() entirely because the cookie file format
+    # is the Cookie-Editor array, not twikit's flat dict. set_cookies()
+    # accepts the dict we just built.
+    client.set_cookies(cookies, clear_cookies=True)
+    print(f"[example] loaded {len(cookies)} cookie(s) from '{COOKIES_FILE}'.")
 
     ###########################################
 
