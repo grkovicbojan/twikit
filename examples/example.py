@@ -126,15 +126,18 @@ def _read_cookies(path: str) -> dict[str, str]:
     return cookies
 
 
-# HTTP/2 is what every modern browser negotiates with x.com. Forcing httpx
-# to do the same makes the ALPN handshake match the Safari User-Agent we
-# advertise -- Cloudflare's bot rules flag the mismatch otherwise.
-# Requires the optional ``h2`` package: ``pip install h2``.
-client = Client(
-    'en-US',
-    proxy='socks5://14ab94d7187c2:076d4ae3fa@206.53.57.231:12324',
-    http2=True,
-)
+_PROXY = 'socks5://14ab94d7187c2:076d4ae3fa@206.53.57.231:12324'
+
+# Replace httpx with a curl_cffi-backed shim that replays Safari's exact
+# TLS ClientHello. Cloudflare's bot rule on /i/api/graphql/* fingerprints
+# the TLS handshake (JA3/JA4); httpx's OpenSSL-based hello doesn't match
+# any browser, which is why we kept hitting 403 even with cookies, headers,
+# and HTTP/2 all correct. curl_cffi runs over libcurl-impersonate.
+#   pip install curl_cffi
+from twikit._cffi_http import CffiAsyncClient
+
+client = Client('en-US')
+client.http = CffiAsyncClient(proxy=_PROXY, impersonate='safari17_0')
 
 
 async def main():
