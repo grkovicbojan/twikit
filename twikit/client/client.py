@@ -215,10 +215,14 @@ class Client:
         return await self.request('POST', url, **kwargs)
 
     def _remove_duplicate_ct0_cookie(self) -> None:
+        # General de-duplicator: httpx's cookie jar can hold multiple cookies
+        # with the same name (different domain / path attributes). When that
+        # happens, ``dict(self.http.cookies)`` raises ``CookieConflict``.
+        # Walk the jar and keep the last occurrence of each name -- which is
+        # the most recently set value, including server-issued refreshes of
+        # ``ct0`` after a write.
         cookies = {}
         for cookie in self.http.cookies.jar:
-            if 'ct0' in cookies and cookie.name == 'ct0':
-                continue
             cookies[cookie.name] = cookie.value
         self.http.cookies = list(cookies.items())
 
@@ -575,7 +579,15 @@ class Client:
         .load_cookies
         .save_cookies
         """
-        return dict(self.http.cookies)
+        # ``dict(self.http.cookies)`` calls ``__getitem__`` per name, which
+        # raises ``CookieConflict`` if the jar holds multiple cookies with the
+        # same name (e.g. one we loaded with no domain attribute and one the
+        # server later issued for ``.x.com``). Walk the jar directly and let
+        # the last entry win.
+        cookies: dict[str, str] = {}
+        for cookie in self.http.cookies.jar:
+            cookies[cookie.name] = cookie.value
+        return cookies
 
     def save_cookies(self, path: str) -> None:
         """

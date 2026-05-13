@@ -149,6 +149,40 @@ def _extract_query_ids(js: str) -> dict[str, str]:
     return found
 
 
+class _CookieJarSnapshot:
+    """Snapshot and restore an httpx client's cookie jar.
+
+    Discovery hits ``https://x.com`` and the JS bundle URLs, which causes the
+    server to send ``Set-Cookie`` headers (e.g. ``guest_id_ads`` on .x.com).
+    Those land in the same jar that already holds the caller's hand-loaded
+    cookies, which httpx then sees as duplicates and crashes on
+    (``CookieConflict``). We snapshot + restore so discovery is invisible
+    to the rest of the client.
+    """
+
+    def __init__(self, http: AsyncClient) -> None:
+        self._http = http
+        self._snapshot: list = []
+
+    def __enter__(self) -> '_CookieJarSnapshot':
+        try:
+            self._snapshot = list(self._http.cookies.jar)
+        except Exception:
+            self._snapshot = []
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        try:
+            self._http.cookies.clear()
+            for cookie in self._snapshot:
+                try:
+                    self._http.cookies.jar.set_cookie(cookie)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+
 async def discover_query_ids(
     http: AsyncClient,
     *,
@@ -159,39 +193,43 @@ async def discover_query_ids(
 
     Results are cached on disk and re-used as long as x.com keeps serving
     the same set of JS bundle URLs. Pass ``force=True`` to bypass the cache.
+
+    The caller's cookie jar is restored exactly as it was before discovery,
+    so this is safe to call after :meth:`Client.set_cookies`.
     """
-    home = await _fetch_text(http, 'https://x.com')
-    if home is None:
-        return {}
+    with _CookieJarSnapshot(http):
+        home = await _fetch_text(http, 'https://x.com')
+        if home is None:
+            return {}
 
-    bundle_urls = sorted(set(_BUNDLE_URL_RE.findall(home)))
-    if not bundle_urls:
-        print(
-            '[twikit.gql_refresh] could not find any client-web bundles on '
-            'x.com (maybe Cloudflare returned an interstitial?).',
-            file=sys.stderr,
-        )
-        return {}
+        bundle_urls = sorted(set(_BUNDLE_URL_RE.findall(home)))
+        if not bundle_urls:
+            print(
+                '[twikit.gql_refresh] could not find any client-web bundles '
+                'on x.com (maybe Cloudflare returned an interstitial?).',
+                file=sys.stderr,
+            )
+            return {}
 
-    cache = _read_cache()
-    cache_key = '|'.join(bundle_urls)
-    if not force and cache.get('bundle_key') == cache_key:
-        cached_ids = cache.get('query_ids')
-        if isinstance(cached_ids, dict):
-            return {str(k): str(v) for k, v in cached_ids.items()}
+        cache = _read_cache()
+        cache_key = '|'.join(bundle_urls)
+        if not force and cache.get('bundle_key') == cache_key:
+            cached_ids = cache.get('query_ids')
+            if isinstance(cached_ids, dict):
+                return {str(k): str(v) for k, v in cached_ids.items()}
 
-    query_ids: dict[str, str] = {}
-    for url in bundle_urls:
-        js = await _fetch_text(http, url)
-        if not js:
-            continue
-        for op, qid in _extract_query_ids(js).items():
-            query_ids.setdefault(op, qid)
+        query_ids: dict[str, str] = {}
+        for url in bundle_urls:
+            js = await _fetch_text(http, url)
+            if not js:
+                continue
+            for op, qid in _extract_query_ids(js).items():
+                query_ids.setdefault(op, qid)
 
-    if query_ids:
-        _write_cache({'bundle_key': cache_key, 'query_ids': query_ids})
+        if query_ids:
+            _write_cache({'bundle_key': cache_key, 'query_ids': query_ids})
 
-    return query_ids
+        return query_ids
 
 
 def apply_query_ids(query_ids: dict[str, str]) -> int:
