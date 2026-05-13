@@ -88,40 +88,77 @@ class User:
 
     def __init__(self, client: Client, data: dict) -> None:
         self._client = client
-        legacy = data['legacy']
 
-        self.id: str = data['rest_id']
-        self.created_at: str = legacy['created_at']
-        self.name: str = legacy['name']
-        self.screen_name: str = legacy['screen_name']
-        self.profile_image_url: str = legacy['profile_image_url_https']
+        # X is migrating user fields out of ``legacy`` into typed sub-objects
+        # (``core``, ``avatar``, ``verification``, ``location``, ...). The
+        # legacy block still ships on most responses but is shrinking over
+        # time. Always read from the new locations first and fall back to
+        # ``legacy`` so this class works against both shapes.
+        legacy: dict = data.get('legacy') or {}
+        core: dict = data.get('core') or {}
+        avatar: dict = data.get('avatar') or {}
+        verification: dict = data.get('verification') or {}
+        location_obj = data.get('location')
+        if isinstance(location_obj, dict):
+            location_str = location_obj.get('location') or ''
+        else:
+            location_str = legacy.get('location') or ''
+
+        self.id: str = data.get('rest_id') or data.get('id_str') or ''
+        self.created_at: str = (
+            core.get('created_at')
+            or legacy.get('created_at')
+            or ''
+        )
+        self.name: str = (
+            core.get('name')
+            or legacy.get('name')
+            or ''
+        )
+        self.screen_name: str = (
+            core.get('screen_name')
+            or legacy.get('screen_name')
+            or ''
+        )
+        self.profile_image_url: str = (
+            avatar.get('image_url')
+            or legacy.get('profile_image_url_https')
+            or ''
+        )
         self.profile_banner_url: str = legacy.get('profile_banner_url')
         self.url: str = legacy.get('url')
-        self.location: str = legacy['location']
-        self.description: str = legacy['description']
-        self.description_urls: list = legacy['entities']['description']['urls']
-        self.urls: list = legacy['entities'].get('url', {}).get('urls')
-        self.pinned_tweet_ids: list[str] = legacy['pinned_tweet_ids_str']
-        self.is_blue_verified: bool = data['is_blue_verified']
-        self.verified: bool = legacy['verified']
-        self.possibly_sensitive: bool = legacy['possibly_sensitive']
-        self.can_dm: bool = legacy['can_dm']
-        self.can_media_tag: bool = legacy['can_media_tag']
-        self.want_retweets: bool = legacy['want_retweets']
-        self.default_profile: bool = legacy['default_profile']
-        self.default_profile_image: bool = legacy['default_profile_image']
-        self.has_custom_timelines: bool = legacy['has_custom_timelines']
-        self.followers_count: int = legacy['followers_count']
-        self.fast_followers_count: int = legacy['fast_followers_count']
-        self.normal_followers_count: int = legacy['normal_followers_count']
-        self.following_count: int = legacy['friends_count']
-        self.favourites_count: int = legacy['favourites_count']
-        self.listed_count: int = legacy['listed_count']
-        self.media_count = legacy['media_count']
-        self.statuses_count: int = legacy['statuses_count']
-        self.is_translator: bool = legacy['is_translator']
-        self.translator_type: str = legacy['translator_type']
-        self.withheld_in_countries: list[str] = legacy['withheld_in_countries']
+        self.location: str = location_str
+        self.description: str = legacy.get('description') or ''
+        entities: dict = legacy.get('entities') or {}
+        self.description_urls: list = (
+            (entities.get('description') or {}).get('urls') or []
+        )
+        self.urls: list = (entities.get('url') or {}).get('urls')
+        self.pinned_tweet_ids: list[str] = legacy.get('pinned_tweet_ids_str') or []
+        self.is_blue_verified: bool = data.get('is_blue_verified', False)
+        self.verified: bool = (
+            verification.get('verified')
+            if 'verified' in verification
+            else legacy.get('verified', False)
+        )
+        self.possibly_sensitive: bool = legacy.get('possibly_sensitive', False)
+        self.can_dm: bool = legacy.get('can_dm', False)
+        self.can_media_tag: bool = legacy.get('can_media_tag', False)
+        self.want_retweets: bool = legacy.get('want_retweets', False)
+        self.default_profile: bool = legacy.get('default_profile', False)
+        self.default_profile_image: bool = legacy.get('default_profile_image', False)
+        self.has_custom_timelines: bool = legacy.get('has_custom_timelines', False)
+        self.followers_count: int = legacy.get('followers_count', 0)
+        self.fast_followers_count: int = legacy.get('fast_followers_count', 0)
+        self.normal_followers_count: int = legacy.get('normal_followers_count', 0)
+        self.following_count: int = legacy.get('friends_count', 0)
+        self.favourites_count: int = legacy.get('favourites_count', 0)
+        self.listed_count: int = legacy.get('listed_count', 0)
+        self.media_count = legacy.get('media_count', 0)
+        self.statuses_count: int = legacy.get('statuses_count', 0)
+        self.is_translator: bool = legacy.get('is_translator', False)
+        self.translator_type: str = legacy.get('translator_type') or 'none'
+        self.withheld_in_countries: list[str] = legacy.get('withheld_in_countries') or []
         self.protected: bool = legacy.get('protected', False)
 
     @property

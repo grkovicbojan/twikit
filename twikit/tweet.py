@@ -100,7 +100,11 @@ class Tweet:
     def __init__(self, client: Client, data: dict, user: User = None) -> None:
         self._client = client
         self._data = data
-        self._legacy: dict = self._data['legacy']
+        # X is moving some fields off the ``legacy`` block; some tweet payloads
+        # in the wild now omit it entirely. Default to an empty dict so the
+        # individual properties degrade to None / 0 instead of crashing the
+        # whole Tweet construction.
+        self._legacy: dict = self._data.get('legacy') or {}
         self.user = user
 
         self.replies: Result[Tweet] | None = None
